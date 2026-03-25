@@ -1,0 +1,16 @@
+# .gitignore
+.env
+venv/
+__pycache__/
+*.jsonl
+
+# production
+/build
+
+# env files (can opt-in for committing if needed)
+.env*
+
+# editor and sys files
+.vscode/
+.idea/
+*.swp
