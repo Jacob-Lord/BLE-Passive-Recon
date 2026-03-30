@@ -8,7 +8,7 @@ from bleak.backends.scanner import AdvertisementData
 
 from advertisement_parser import BLEAdvertisementParser
 
-OUTPUT_PATH = Path("ble_capture.jsonl")
+OUTPUT_PATH = Path("captures/ble_capture.jsonl")
 
 
 def handle_advertisement(device: BLEDevice, adv: AdvertisementData) -> None:
