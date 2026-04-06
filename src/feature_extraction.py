@@ -13,11 +13,12 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 # Helpers
 # ============================================================
 
-CONNECTABLE_ADV_TYPES = {"ADV_IND", "ADV_DIRECT_IND", "connectable"}
+CONNECTABLE_ADV_TYPES = {"ADV_IND", "ADV_DIRECT_IND", "connectable"} 
 SCANNABLE_ADV_TYPES = {"ADV_IND", "ADV_SCAN_IND", "scannable"}
 
-BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"
+BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb" # This is the standard Bluetooth Base UUID suffix used for 16-bit and 32-bit UUIDs to form full 128-bit UUIDs.
 
+# This mapping is based on commonly known Bluetooth SIG-adopted service UUIDs that are often associated with sensitive functionalities. It can be expanded as needed.
 SENSITIVE_SERVICE_MAP: Dict[str, str] = {
     # Human interface / input
     f"00001812{BASE_UUID_SUFFIX}": "human_interface",
@@ -137,41 +138,46 @@ def get_flag_bool(flags: Optional[Dict[str, Any]], key: str) -> bool:
 # Dataclass
 # ============================================================
 
+# This dataclass represents the extracted features for a specific cluster within a specific time window. Each instance corresponds to one cluster-window combination.
 @dataclass
 class ClusterWindowFeatures:
-    cluster_id: int
-    window_start: str
+    cluster_id: int # Unique identifier for the cluster (e.g., from clustering algorithm)
+
+    # The time window for which these features are computed. The window is defined as [window_start, window_end), where window_start is inclusive and window_end is exclusive. Both are in ISO 8601 format (UTC).
+    window_start: str 
     window_end: str
 
     observation_count: int
-    coverage_seconds: float
-    avg_interarrival_seconds: Optional[float]
+    coverage_seconds: float # Total time in seconds between the first and last observation in this window for this cluster
+    avg_interarrival_seconds: Optional[float] # Average time in seconds between consecutive observations in this window for this cluster (None if only one observation)
 
+    # RSSI (Received Signal Strength Indicator) features, if available. These can provide insights into the signal strength and potential proximity of the device(s) in this cluster during this window.
     avg_rssi: Optional[float]
     min_rssi: Optional[int]
     max_rssi: Optional[int]
 
-    unique_addresses: int
-    address_change_events: int
-    dominant_address_fraction: float
+    unique_addresses: int # Number of unique MAC addresses observed in this cluster-window. A higher number may indicate more devices or more address randomization.
+    address_change_events: int # Number of times the observed address changed from one observation to the next within this cluster-window. This can be an indicator of address randomization behavior.
+    dominant_address_fraction: float # Fraction of observations in this cluster-window that share the most common address. A higher fraction may indicate a stable device, while a lower fraction may suggest more randomization or multiple devices.
 
+    # Address type distribution, if available. This can provide insights into the types of addresses being observed (e.g., public vs random) and their prevalence within this cluster-window.
     public_addr_fraction: float
     random_addr_fraction: float
     unknown_addr_type_fraction: float
 
-    connectable_fraction: float
+    connectable_fraction: float # Fraction of observations in this cluster-window that are connectable advertisements, if adv_type information is available. This can indicate the presence of devices that are open to connections.
     scannable_fraction: float
 
-    discoverable_fraction: float
+    discoverable_fraction: float # Fraction of observations in this cluster-window that are discoverable (either general or limited), if flags information is available. This can indicate the presence of devices that are advertising themselves for discovery.
     general_discoverable_fraction: float
     limited_discoverable_fraction: float
 
-    local_name_present_fraction: float
+    local_name_present_fraction: float # Fraction of observations in this cluster-window that include a local name. This can indicate how often devices are advertising a human-readable name, which may be useful for identification.
     top_local_name: Optional[str]
     local_name_stability: float
 
-    unique_service_uuid_count: int
-    top_service_uuids: List[str]
+    unique_service_uuid_count: int # Number of unique service UUIDs observed in this cluster-window. This can indicate the diversity of services being advertised by devices in this cluster during this window. 
+    top_service_uuids: List[str] # The most common service UUIDs observed in this cluster-window, up to the top_k specified in the FeatureExtractor. This can provide insights into the types of services that are prevalent among the devices in this cluster during this window.
     dominant_service_uuid_fraction: float
     dominant_uuid_signature_fraction: float
 
@@ -183,7 +189,7 @@ class ClusterWindowFeatures:
     dominant_company_fraction: float
     dominant_company_signature_fraction: float
 
-    sensitive_service_count: int
+    sensitive_service_count: int # Number of unique sensitive service categories observed in this cluster-window based on the SENSITIVE_SERVICE_MAP. This can indicate the presence of potentially sensitive devices or activities within this cluster during this window.
     sensitive_service_categories: List[str]
 
     sparse_observation_fraction: float
@@ -215,21 +221,23 @@ class FeatureExtractor:
         all_window_starts: Set[str] = set()
         cluster_to_windows: Dict[int, Set[str]] = defaultdict(set)
 
+        # Iterate through all records and assign them to the appropriate cluster-window group based on their cluster_id and timestamp.
+        # We also keep track of all unique window start times and which windows each cluster appears in for later use in feature calculations.
         for record in records_list:
             cluster_id = record.get("cluster_id")
             ts = record.get("ts")
             if cluster_id is None or ts is None:
                 continue
 
-            dt = parse_iso_ts(ts)
+            dt = parse_iso_ts(ts) # Parse the timestamp into a datetime object
             w_start = to_iso(floor_to_window(dt, self.window_seconds))
-            key = (int(cluster_id), w_start)
+            key = (int(cluster_id), w_start) # Grouping key is a tuple of (cluster_id, window_start)
 
             grouped[key].append(record)
             all_window_starts.add(w_start)
             cluster_to_windows[int(cluster_id)].add(w_start)
 
-        total_windows_in_capture = len(all_window_starts)
+        total_windows_in_capture = len(all_window_starts) # Total number of unique windows across the entire capture, used for calculating presence fractions.
         feature_rows: List[Dict[str, Any]] = []
 
         for (cluster_id, window_start), group in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1])):
