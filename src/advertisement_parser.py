@@ -4,11 +4,18 @@ from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+'''
+This is the Decode / Normalization Layer of the project,
+responsible for parsing raw BLE advertising payload bytes into
+structured fields and normalizing data from different
+sources (e.g., raw payloads vs. Bleak's decoded fields) into a consistent schema.
+'''
 
 # ============================================================
 # BLE Advertising Data (AD) Type Constants
 # ============================================================
 
+# (https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Assigned_Numbers/out/en/Assigned_Numbers.pdf)
 AD_TYPE_NAMES: Dict[int, str] = {
     0x01: "Flags",
     0x02: "Incomplete List of 16-bit Service UUIDs",
@@ -20,16 +27,28 @@ AD_TYPE_NAMES: Dict[int, str] = {
     0x08: "Shortened Local Name",
     0x09: "Complete Local Name",
     0x0A: "Tx Power Level",
-    0x12: "Slave Connection Interval Range",
+    0x0D: "Class of Device",
+    0x0E: "Simple Pairing Hash C-192",
+    0x0F: "Simple Pairing Randomizer R-192",
+    0x10: "Device ID",
+    0x11: "Security Manager Out of Band Flags",
+    0x12: "Peripheral Connection Interval Range",
     0x14: "List of 16-bit Service Solicitation UUIDs",
     0x15: "List of 128-bit Service Solicitation UUIDs",
     0x16: "Service Data - 16-bit UUID",
+    0x17: "Public Target Address",
+    0x18: "Random Target Address",
     0x19: "Appearance",
+    0x1A: "Advertising Interval",
     0x1B: "LE Bluetooth Device Address",
     0x1C: "LE Role",
+    0x1D: "Simple Pairing Hash C-256",
+    0x1E: "Simple Pairing Randomizer R-256",
     0x1F: "List of 32-bit Service Solicitation UUIDs",
     0x20: "Service Data - 32-bit UUID",
     0x21: "Service Data - 128-bit UUID",
+    0x22: "LE Secure Connections Confirmation Value",
+    0x23: "LE Secure Connections Random Value",
     0x24: "URI",
     0xFF: "Manufacturer Specific Data",
 }
@@ -46,9 +65,11 @@ FLAGS_MAP = {
     1: "LE General Discoverable Mode",
     2: "BR/EDR Not Supported",
     3: "Simultaneous LE and BR/EDR (Controller)",
-    4: "Simultaneous LE and BR/EDR (Host)",
+    4: "Simultaneous LE and BR/EDR (Host)", # Now the bit is "Previously Used" as of Bluetooth 5.2, but we keep the old name for compatibility with older captures and because some devices may still set it with the old meaning. 
 }
 
+
+# (https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/CSS_v11/out/en/supplement-to-the-bluetooth-core-specification/data-types-specification.html#UUID-fde9931d-ec10-28ea-91af-2f3a551e4ccd)
 LE_ROLE_MAP = {
     0x00: "Only Peripheral Role Supported",
     0x01: "Only Central Role Supported",
@@ -64,18 +85,18 @@ LE_ROLE_MAP = {
 # Advertisement Data (AD) structure representation
 @dataclass
 class ADStructure:
-    ad_type: int # AD Type value (e.g., 0x01 for Flags)
+    ad_type: int # AD Type value (e.g., 0x01 for Flags) - second byte
     ad_type_name: str # Name of the AD Type (e.g., "Flags")
-    length: int # Length of the data field
+    length: int # Length of the data field - first byte
     data_hex: str # Raw data in hexadecimal string form
-    decoded: Dict[str, Any] # Decoded fields specific to this AD type (e.g., for Flags, the individual flag bits and their meanings)
+    decoded: Dict[str, Any] # Decoded fields specific to this AD type (e.g., for Flags, the individual flag bits and their meanings) - remaining bytes after the first two (length and type)
 
 
 # Normalized advertisement record schema
 @dataclass
 class NormalizedAdvertisementRecord:
     ts: str # Timestamp
-    rssi: Optional[int] # Received Signal Strength Indicator
+    rssi: Optional[int] # Received Signal Strength Indicator - can indiciate proximity
     addr: Optional[str] # MAC Address
     addr_type: Optional[str] # Address Type
     adv_type: Optional[str] # Advertisement Type
