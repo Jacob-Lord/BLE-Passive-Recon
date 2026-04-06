@@ -25,11 +25,11 @@ def handle_advertisement(device: BLEDevice, adv: AdvertisementData) -> None:
         f.write(json.dumps(record) + "\n")
 
     print(
-        f"[{record['ts']}] "
-        f"{record['addr']} "
-        f"RSSI={record['rssi']} "
-        f"name={record['local_name']} "
-        f"uuids={record['service_uuids']}"
+        f"[{record['ts']}] " # Timestamp
+        f"{record['addr']} " # MAC Address
+        f"RSSI={record['rssi']} " # Received Signal Strength Indicator
+        f"name={record['local_name']} " # Local Name (if available)
+        f"uuids={record['service_uuids']}" # Universally Unique Identifiers of services 
     )
 
 
