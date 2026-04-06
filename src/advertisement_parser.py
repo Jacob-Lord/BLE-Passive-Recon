@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 
 # ============================================================
@@ -39,6 +39,8 @@ AD_TYPE_NAMES: Dict[int, str] = {
 # Helper Mappings
 # ============================================================
 
+# These mappings are used to decode specific fields like Flags and LE Role into human-readable forms.
+
 FLAGS_MAP = {
     0: "LE Limited Discoverable Mode",
     1: "LE General Discoverable Mode",
@@ -59,40 +61,42 @@ LE_ROLE_MAP = {
 # Dataclasses
 # ============================================================
 
+# Advertisement Data (AD) structure representation
 @dataclass
 class ADStructure:
-    ad_type: int
-    ad_type_name: str
-    length: int
-    data_hex: str
-    decoded: Dict[str, Any]
+    ad_type: int # AD Type value (e.g., 0x01 for Flags)
+    ad_type_name: str # Name of the AD Type (e.g., "Flags")
+    length: int # Length of the data field
+    data_hex: str # Raw data in hexadecimal string form
+    decoded: Dict[str, Any] # Decoded fields specific to this AD type (e.g., for Flags, the individual flag bits and their meanings)
 
 
+# Normalized advertisement record schema
 @dataclass
 class NormalizedAdvertisementRecord:
-    ts: str
-    rssi: Optional[int]
-    addr: Optional[str]
-    addr_type: Optional[str]
-    adv_type: Optional[str]
+    ts: str # Timestamp
+    rssi: Optional[int] # Received Signal Strength Indicator
+    addr: Optional[str] # MAC Address
+    addr_type: Optional[str] # Address Type
+    adv_type: Optional[str] # Advertisement Type
 
     # Raw payload, if available
     payload_hex: Optional[str]
 
     # Common normalized fields
     local_name: Optional[str]
-    tx_power_dbm: Optional[int]
-    appearance_code: Optional[int]
-    appearance_hex: Optional[str]
-    le_role: Optional[str]
+    tx_power_dbm: Optional[int] # Transmit Power in dBm
+    appearance_code: Optional[int] # Bit-wise appearance code as defined by Bluetooth SIG (https://www.bluetooth.com/wp-content/uploads/Files/Specification/HTML/Assigned_Numbers/out/en/Assigned_Numbers.pdf)
+    appearance_hex: Optional[str] # Hex string representation of the appearance code (e.g., 0x001 - Phone, 0x002 - Computer, etc.)
+    le_role: Optional[str] # LE Role (e.g., "Only Peripheral Role Supported", "Only Central Role Supported", etc.)
 
-    flags: Optional[Dict[str, Any]]
-    service_uuids: List[str]
-    service_data: List[Dict[str, Any]]
-    manufacturer_data: List[Dict[str, Any]]
+    flags: Optional[Dict[str, Any]] # Decoded flags field with raw value, hex representation, and list of flag names
+    service_uuids: List[str] # List of service UUIDs advertised by the device
+    service_data: List[Dict[str, Any]] # List of service data entries, each with 'uuid' and 'service_data_hex'
+    manufacturer_data: List[Dict[str, Any]] # List of manufacturer data entries, each with 'company_id', 'company_id_hex', and 'manufacturer_data_hex'
 
-    ad_structures: List[Dict[str, Any]]
-    parse_errors: List[str]
+    ad_structures: List[Dict[str, Any]] # List of all parsed AD structures with their types, raw data, and decoded fields
+    parse_errors: List[str] # List of any errors encountered during parsing (e.g., malformed structures)
 
 
 # ============================================================
