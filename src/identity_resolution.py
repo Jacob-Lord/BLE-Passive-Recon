@@ -26,6 +26,8 @@ def parse_iso_ts(ts: str) -> datetime:
     return dt
 
 
+# (https://www.ibm.com/think/topics/jaccard-similarity#:~:text=Jaccard%20similarity%20is%20a%20statistical,that%20the%20sets%20are%20identical.)
+# Ranges from 0.0 (no overlap) to 1.0 (identical sets)
 def jaccard(a: Set[Any], b: Set[Any]) -> float:
     if not a or not b:
         return 0.0
@@ -39,7 +41,8 @@ def safe_ratio(a: Optional[str], b: Optional[str]) -> float:
         return 0.0
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
-
+# For RSSI, we want a similarity that is high for small differences and decays as the gap grows.
+# The purpose of finding RSSI similarity is to help link records that are close in time and have similar signal strength, which can be a strong signal of being the same device, especially when other stable identifiers are missing.
 def bounded_rssi_similarity(a: Optional[int], b: Optional[int]) -> float:
     if a is None or b is None:
         return 0.0
@@ -52,7 +55,9 @@ def bounded_rssi_similarity(a: Optional[int], b: Optional[int]) -> float:
         return 0.4
     return 0.0
 
-
+# Temporal similarity is a crucial component of the overall similarity score. 
+# It helps to ensure that we are more likely to link records that are close together in time, which is a strong signal that they may be from the same device. 
+# The function uses an exponential decay to smoothly reduce the similarity score as the time gap increases, with a configurable maximum gap after which the similarity drops to zero.
 def temporal_similarity(delta_seconds: float, max_gap_seconds: float) -> float:
     """
     Smooth decay from 1.0 (immediate) toward 0.0 as the gap approaches/exceeds max_gap.
@@ -64,7 +69,8 @@ def temporal_similarity(delta_seconds: float, max_gap_seconds: float) -> float:
     # Gentle exponential decay
     return math.exp(-delta_seconds / (max_gap_seconds / 3.0))
 
-
+# Simple address normalization: strip whitespace and lowercase. 
+# This helps to ensure that we are comparing addresses in a consistent format, which can help to improve the accuracy of our clustering.
 def normalize_addr(addr: Optional[str]) -> Optional[str]:
     if not addr:
         return None

@@ -178,9 +178,9 @@ python main.py run-all captures/ble_capture.jsonl --out-dir outputs --print-top 
 ## Example Workflow
 
 ```bash
-python main.py capture captures/ble_capture.jsonl --duration 300
-python main.py run-all captures/ble_capture.jsonl --out-dir outputs --print-top 10
-python main.py report outputs/ble_scores.jsonl --top 10
+python src/main.py capture captures/ble_capture.jsonl --duration 300
+python src/main.py run-all captures/ble_capture.jsonl --out-dir outputs --print-top 10
+python src/main.py report outputs/ble_scores.jsonl --top 10
 ```
 
 ## Output Interpretation
