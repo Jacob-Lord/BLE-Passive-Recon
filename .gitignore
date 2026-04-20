@@ -3,6 +3,7 @@
 venv/
 __pycache__/
 *.jsonl
+*.json
 
 # production
 /build
