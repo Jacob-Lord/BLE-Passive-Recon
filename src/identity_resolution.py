@@ -272,8 +272,15 @@ class ClusterState:
             **identity_hints.to_dict(),
         }
 
+# ============================================================
+# Identity Hint Builder
+# ============================================================
 
 def build_identity_hints(cluster: ClusterState) -> IdentityHints:
+    '''
+    Build best-effort identity hints for a cluster based on its stable attributes.
+    This is separate from the clustering logic and is meant to provide human-readable insights about the probable device type/label without affecting the core clustering decisions.
+    '''
     top_name = top_counter_value(cluster.local_names)
     name_stability = stable_fraction(cluster.local_names)
     top_uuid_type = infer_type_from_uuids(cluster.service_uuid_counter.keys())
