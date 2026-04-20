@@ -134,6 +134,18 @@ def print_summary(label: str, metrics: Dict[str, Any]) -> None:
         for truth, preds in metrics["false_split_devices"].items():
             print(f"  truth {truth}: split into clusters {preds}")
 
+def evaluate_rows(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    rows = filter_valid_rows(rows)
+    if not rows:
+        raise ValueError("No rows found with both device_truth_id and cluster_id.")
+
+    overall = pairwise_metrics(rows)
+    per_scenario = per_scenario_metrics(rows)
+
+    return {
+        "overall": overall,
+        "per_scenario": per_scenario,
+    }
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Evaluate clustering quality on synthetic BLE traces.")

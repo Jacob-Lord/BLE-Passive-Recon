@@ -67,11 +67,16 @@ def compute_storage_growth_mb_per_hour(capture_path: Path) -> Dict[str, Any]:
 def measure_scoring_latency(features_path: Path, repeats: int = 3) -> Dict[str, Any]:
     latencies_ms: List[float] = []
 
-    for _ in range(repeats):
-        with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=True) as tmp:
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir_path = Path(tmpdir)
+
+        for i in range(repeats):
+            tmp_output = tmpdir_path / f"scoring_latency_{i}.jsonl"
+
             start = time.perf_counter()
-            score_features_jsonl(features_path, Path(tmp.name))
+            score_features_jsonl(features_path, tmp_output)
             end = time.perf_counter()
+
             latencies_ms.append((end - start) * 1000.0)
 
     latencies_ms.sort()
@@ -85,7 +90,6 @@ def measure_scoring_latency(features_path: Path, repeats: int = 3) -> Dict[str, 
         "average_latency_ms": round(avg_ms, 3),
         "median_latency_ms": round(median_ms, 3),
     }
-
 
 # ============================================================
 # Evaluation runners
@@ -141,14 +145,14 @@ def print_inventory_summary(metrics: Dict[str, Any], windows: List[int]) -> None
 def print_clustering_summary(metrics: Dict[str, Any]) -> None:
     overall = metrics["overall"] if "overall" in metrics else metrics
     divider("Clustering Evaluation")
-    print(f"Observations:            {overall['num_rows']}")
-    print(f"Truth devices:           {overall['num_truth_entities']}")
-    print(f"Predicted clusters:      {overall['num_pred_entities']}")
-    print(f"Pairwise precision:      {overall['pairwise_precision']:.4f}")
-    print(f"Pairwise recall:         {overall['pairwise_recall']:.4f}")
-    print(f"Pairwise F1:             {overall['pairwise_f1']:.4f}")
-    print(f"False merge clusters:    {overall['false_merge_clusters']}")
-    print(f"False split devices:     {overall['false_split_devices']}")
+    print(f"Observations:            {overall['observations']}")
+    print(f"Truth devices:           {overall['truth_devices']}")
+    print(f"Predicted clusters:      {overall['predicted_clusters']}")
+    print(f"Pairwise precision:      {overall['precision']:.4f}")
+    print(f"Pairwise recall:         {overall['recall']:.4f}")
+    print(f"Pairwise F1:             {overall['f1']:.4f}")
+    print(f"False merge clusters:    {overall['false_merge_cluster_count']}")
+    print(f"False split devices:     {overall['false_split_device_count']}")
 
 
 
