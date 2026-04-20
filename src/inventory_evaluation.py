@@ -186,9 +186,14 @@ class InventoryEvaluator:
         capture_start = parse_iso_ts(records[0]["ts"])
         capture_end = parse_iso_ts(records[-1]["ts"])
 
-        devices = manifest.get("devices")
-        if not isinstance(devices, list) or not devices:
-            raise ValueError("Manifest must contain a non-empty 'devices' list.")
+
+    
+        if isinstance(manifest, dict):
+            devices = manifest.get("devices")
+        elif isinstance(manifest, list):
+            devices = manifest
+        else:
+            raise ValueError("Manifest must be either a dict with a 'devices' key or a list of device entries.")
 
         per_device: List[DeviceEvalResult] = []
         recalled_counts = {str(w): 0 for w in self.windows_seconds}
