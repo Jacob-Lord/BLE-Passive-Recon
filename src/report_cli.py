@@ -98,7 +98,7 @@ def format_driver_list(drivers: List[Dict[str, Any]], limit: int = 3) -> str:
     return "; ".join(items)
 
 
-def print_divider(width: int = 110) -> None:
+def print_divider(width: int = 150) -> None:
     print("-" * width)
 
 
@@ -115,6 +115,7 @@ def print_summary(rows: List[Dict[str, Any]], ranked_latest: List[Dict[str, Any]
 
     scores = []
     confidences = []
+    identified_count = 0
 
     for row in ranked_latest:
         tier = str(row.get("exposure_tier", "low")).lower()
@@ -123,6 +124,9 @@ def print_summary(rows: List[Dict[str, Any]], ranked_latest: List[Dict[str, Any]
 
         if bool(row.get("high_exposure_indicator")):
             high_exposure_count += 1
+
+        if row.get("probable_device_label") or row.get("probable_device_type"):
+            identified_count += 1
 
         scores.append(safe_float(row.get("exposure_score")))
         confidences.append(safe_float(row.get("confidence_score")))
@@ -136,6 +140,7 @@ def print_summary(rows: List[Dict[str, Any]], ranked_latest: List[Dict[str, Any]
     print(f"Unique clusters (latest): {total_clusters}")
     print(f"Average exposure score:   {avg_score:.2f}")
     print(f"Average confidence:       {avg_conf:.2f}")
+    print(f"Clusters with ID hints:   {identified_count}")
     print(f"High tier clusters:       {tier_counts['high']}")
     print(f"Medium tier clusters:     {tier_counts['medium']}")
     print(f"Low tier clusters:        {tier_counts['low']}")
@@ -150,10 +155,12 @@ def print_top_n(rows: List[Dict[str, Any]], top_n: int) -> None:
     header = (
         f"{fmt('Rank', 6)}"
         f"{fmt('Cluster', 10)}"
+        f"{fmt('Label', 24)}"
+        f"{fmt('Type', 18)}"
         f"{fmt('Score', 8)}"
         f"{fmt('Conf', 8)}"
         f"{fmt('Tier', 8)}"
-        f"{fmt('HighExp', 10)}"
+        f"{fmt('IDConf', 8)}"
         f"{fmt('Obs', 8)}"
         f"{fmt('Window Start', 27)}"
         f"Top Drivers"
@@ -166,10 +173,12 @@ def print_top_n(rows: List[Dict[str, Any]], top_n: int) -> None:
         line = (
             f"{fmt(idx, 6)}"
             f"{fmt(row.get('cluster_id'), 10)}"
+            f"{fmt(row.get('probable_device_label') or '-', 24)}"
+            f"{fmt(row.get('probable_device_type') or '-', 18)}"
             f"{fmt_score(row.get('exposure_score')).ljust(8)}"
             f"{fmt_score(row.get('confidence_score')).ljust(8)}"
             f"{fmt(row.get('exposure_tier', ''), 8)}"
-            f"{fmt(str(bool(row.get('high_exposure_indicator'))), 10)}"
+            f"{fmt_score(row.get('identity_confidence')).ljust(8)}"
             f"{fmt(row.get('observation_count', ''), 8)}"
             f"{fmt(row.get('window_start', ''), 27)}"
             f"{format_driver_list(drivers, limit=3)}"
@@ -188,6 +197,10 @@ def print_cluster_detail(history: List[Dict[str, Any]]) -> None:
 
     print(f"Cluster Detail: {latest['cluster_id']}")
     print_divider()
+    print(f"Probable label:       {latest.get('probable_device_label') or 'None'}")
+    print(f"Probable type:        {latest.get('probable_device_type') or 'None'}")
+    print(f"Identity confidence:  {fmt_score(latest.get('identity_confidence'))}")
+    print(f"ID basis:             {', '.join(latest.get('identification_basis', [])) or 'None'}")
     print(f"Latest score:         {fmt_score(latest.get('exposure_score'))}")
     print(f"Latest confidence:    {fmt_score(latest.get('confidence_score'))}")
     print(f"Exposure tier:        {latest.get('exposure_tier')}")
@@ -225,6 +238,9 @@ def print_cluster_detail(history: List[Dict[str, Any]]) -> None:
         f"{fmt('Score', 8)}"
         f"{fmt('Conf', 8)}"
         f"{fmt('Tier', 8)}"
+        f"{fmt('IDConf', 8)}"
+        f"{fmt('Label', 22)}"
+        f"{fmt('Type', 16)}"
         f"{fmt('Obs', 8)}"
     )
     print(hist_header)
@@ -237,6 +253,9 @@ def print_cluster_detail(history: List[Dict[str, Any]]) -> None:
             f"{fmt_score(row.get('exposure_score')).ljust(8)}"
             f"{fmt_score(row.get('confidence_score')).ljust(8)}"
             f"{fmt(row.get('exposure_tier', ''), 8)}"
+            f"{fmt_score(row.get('identity_confidence')).ljust(8)}"
+            f"{fmt(row.get('probable_device_label') or '-', 22)}"
+            f"{fmt(row.get('probable_device_type') or '-', 16)}"
             f"{fmt(row.get('observation_count', ''), 8)}"
         )
         print(line)
@@ -256,6 +275,10 @@ def build_export_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "cluster_id": row.get("cluster_id"),
             "window_start": row.get("window_start"),
             "window_end": row.get("window_end"),
+            "probable_device_label": row.get("probable_device_label"),
+            "probable_device_type": row.get("probable_device_type"),
+            "identity_confidence": row.get("identity_confidence"),
+            "identification_basis": row.get("identification_basis", []),
             "exposure_score": row.get("exposure_score"),
             "confidence_score": row.get("confidence_score"),
             "exposure_tier": row.get("exposure_tier"),

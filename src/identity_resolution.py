@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 from collections import Counter
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from pathlib import Path
@@ -41,6 +41,7 @@ def safe_ratio(a: Optional[str], b: Optional[str]) -> float:
         return 0.0
     return SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
+
 # For RSSI, we want a similarity that is high for small differences and decays as the gap grows.
 # The purpose of finding RSSI similarity is to help link records that are close in time and have similar signal strength, which can be a strong signal of being the same device, especially when other stable identifiers are missing.
 def bounded_rssi_similarity(a: Optional[int], b: Optional[int]) -> float:
@@ -55,8 +56,9 @@ def bounded_rssi_similarity(a: Optional[int], b: Optional[int]) -> float:
         return 0.4
     return 0.0
 
-# Temporal similarity is a crucial component of the overall similarity score. 
-# It helps to ensure that we are more likely to link records that are close together in time, which is a strong signal that they may be from the same device. 
+
+# Temporal similarity is a crucial component of the overall similarity score.
+# It helps to ensure that we are more likely to link records that are close together in time, which is a strong signal that they may be from the same device.
 # The function uses an exponential decay to smoothly reduce the similarity score as the time gap increases, with a configurable maximum gap after which the similarity drops to zero.
 def temporal_similarity(delta_seconds: float, max_gap_seconds: float) -> float:
     """
@@ -69,12 +71,137 @@ def temporal_similarity(delta_seconds: float, max_gap_seconds: float) -> float:
     # Gentle exponential decay
     return math.exp(-delta_seconds / (max_gap_seconds / 3.0))
 
-# Simple address normalization: strip whitespace and lowercase. 
+
+# Simple address normalization: strip whitespace and lowercase.
 # This helps to ensure that we are comparing addresses in a consistent format, which can help to improve the accuracy of our clustering.
 def normalize_addr(addr: Optional[str]) -> Optional[str]:
     if not addr:
         return None
     return addr.strip().lower()
+
+
+BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"
+GENERIC_NAME_TOKENS = {
+    "iphone", "ipad", "airpods", "macbook", "windows pc", "android", "phone",
+    "tablet", "laptop", "watch", "keyboard", "mouse", "speaker", "headphones",
+    "earbuds", "beacon", "tile", "tracker", "unknown", "device", "ble", "bluetooth",
+}
+
+DEVICE_NAME_KEYWORDS = {
+    "airpods": "audio_wearable",
+    "earbud": "audio_wearable",
+    "earbuds": "audio_wearable",
+    "headphone": "audio_wearable",
+    "headphones": "audio_wearable",
+    "speaker": "audio_wearable",
+    "iphone": "smartphone",
+    "ipad": "tablet",
+    "pixel": "smartphone",
+    "galaxy": "smartphone",
+    "phone": "smartphone",
+    "watch": "smartwatch",
+    "fitbit": "fitness_tracker",
+    "garmin": "fitness_tracker",
+    "keyboard": "human_interface",
+    "mouse": "human_interface",
+    "trackpad": "human_interface",
+    "beacon": "location_beacon",
+    "tile": "location_beacon",
+    "tag": "location_beacon",
+    "thermometer": "medical_health",
+    "glucose": "medical_health",
+    "pulse": "medical_health",
+    "oximeter": "medical_health",
+    "sensor": "sensor",
+    "printer": "peripheral",
+}
+
+SERVICE_UUID_TYPE_MAP: Dict[str, str] = {
+    f"00001812{BASE_UUID_SUFFIX}": "human_interface",
+    f"00001808{BASE_UUID_SUFFIX}": "medical_health",
+    f"00001809{BASE_UUID_SUFFIX}": "medical_health",
+    f"00001810{BASE_UUID_SUFFIX}": "medical_health",
+    f"0000181f{BASE_UUID_SUFFIX}": "medical_health",
+    f"00001822{BASE_UUID_SUFFIX}": "medical_health",
+    f"0000180d{BASE_UUID_SUFFIX}": "fitness_tracker",
+    f"00001816{BASE_UUID_SUFFIX}": "fitness_tracker",
+    f"00001819{BASE_UUID_SUFFIX}": "location_navigation",
+    f"00001815{BASE_UUID_SUFFIX}": "industrial_control",
+    f"00001820{BASE_UUID_SUFFIX}": "network_proxy",
+    f"00001823{BASE_UUID_SUFFIX}": "network_proxy",
+    f"0000181a{BASE_UUID_SUFFIX}": "sensor",
+    f"0000180f{BASE_UUID_SUFFIX}": "general_peripheral",
+    f"0000180a{BASE_UUID_SUFFIX}": "general_peripheral",
+}
+
+
+def normalize_uuid(uuid: Any) -> Optional[str]:
+    if uuid is None:
+        return None
+
+    s = str(uuid).strip().lower()
+    if not s:
+        return None
+
+    if len(s) == 36 and "-" in s:
+        return s
+
+    if len(s) == 4:
+        try:
+            int(s, 16)
+            return f"0000{s}{BASE_UUID_SUFFIX}"
+        except ValueError:
+            return s
+
+    if len(s) == 8:
+        try:
+            int(s, 16)
+            return f"{s}{BASE_UUID_SUFFIX}"
+        except ValueError:
+            return s
+
+    return s
+
+
+def stable_fraction(counter: Counter) -> float:
+    if not counter:
+        return 0.0
+    total = sum(counter.values())
+    if total <= 0:
+        return 0.0
+    return counter.most_common(1)[0][1] / total
+
+
+def top_counter_value(counter: Counter) -> Optional[str]:
+    if not counter:
+        return None
+    return counter.most_common(1)[0][0]
+
+
+def is_generic_name(name: Optional[str]) -> bool:
+    if not name:
+        return True
+    lowered = name.strip().lower()
+    return lowered in GENERIC_NAME_TOKENS
+
+
+def infer_type_from_name(name: Optional[str]) -> Optional[str]:
+    if not name:
+        return None
+    lowered = name.lower()
+    for keyword, device_type in DEVICE_NAME_KEYWORDS.items():
+        if keyword in lowered:
+            return device_type
+    return None
+
+
+def infer_type_from_uuids(service_uuids: Iterable[str]) -> Optional[str]:
+    type_counter: Counter[str] = Counter()
+    for uuid in service_uuids:
+        normalized = normalize_uuid(uuid)
+        if normalized and normalized in SERVICE_UUID_TYPE_MAP:
+            type_counter[SERVICE_UUID_TYPE_MAP[normalized]] += 1
+    return top_counter_value(type_counter)
 
 
 # ============================================================
@@ -86,6 +213,22 @@ class LinkEvidence:
     reason: str
     score: float
     details: Dict[str, Any]
+
+
+@dataclass
+class IdentityHints:
+    probable_device_label: Optional[str]
+    probable_device_type: Optional[str]
+    identity_confidence: float
+    identification_basis: List[str]
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "probable_device_label": self.probable_device_label,
+            "probable_device_type": self.probable_device_type,
+            "identity_confidence": round(self.identity_confidence, 3),
+            "identification_basis": self.identification_basis,
+        }
 
 
 @dataclass
@@ -110,6 +253,7 @@ class ClusterState:
     address_change_count: int = 0
 
     def to_summary(self) -> Dict[str, Any]:
+        identity_hints = build_identity_hints(self)
         return {
             "cluster_id": self.cluster_id,
             "first_seen": self.first_seen,
@@ -125,7 +269,74 @@ class ClusterState:
             "avg_rssi": self.avg_rssi,
             "last_rssi": self.last_rssi,
             "address_change_count": self.address_change_count,
+            **identity_hints.to_dict(),
         }
+
+
+def build_identity_hints(cluster: ClusterState) -> IdentityHints:
+    top_name = top_counter_value(cluster.local_names)
+    name_stability = stable_fraction(cluster.local_names)
+    top_uuid_type = infer_type_from_uuids(cluster.service_uuid_counter.keys())
+    top_name_type = infer_type_from_name(top_name)
+    top_company = top_counter_value(cluster.manufacturer_company_counter)
+
+    probable_device_label: Optional[str] = None
+    probable_device_type: Optional[str] = top_name_type or top_uuid_type
+    identification_basis: List[str] = []
+    confidence = 0.0
+
+    if top_name:
+        probable_device_label = top_name
+        if name_stability >= 0.75 and not is_generic_name(top_name):
+            confidence += 0.45
+            identification_basis.append("stable_local_name")
+        elif not is_generic_name(top_name):
+            confidence += 0.30
+            identification_basis.append("local_name")
+        else:
+            confidence += 0.12
+            identification_basis.append("generic_local_name")
+
+    if top_name_type:
+        confidence += 0.20
+        identification_basis.append("name_keyword_inference")
+
+    if top_uuid_type:
+        confidence += 0.25
+        identification_basis.append("service_uuid_inference")
+        if probable_device_label is None:
+            probable_device_label = f"probable_{top_uuid_type}_device"
+
+    company_stability = stable_fraction(cluster.manufacturer_company_counter)
+    if top_company is not None:
+        confidence += 0.10 if company_stability >= 0.7 else 0.05
+        identification_basis.append("manufacturer_company_id")
+        if probable_device_label is None:
+            probable_device_label = f"company_{top_company}_device"
+
+    addr_type = top_counter_value(cluster.addr_types)
+    if addr_type == "public":
+        confidence += 0.10
+        identification_basis.append("public_address_behavior")
+
+    if len(cluster.addresses) == 1:
+        confidence += 0.08
+        identification_basis.append("single_observed_address")
+
+    uuid_signature_stability = stable_fraction(cluster.service_uuid_counter)
+    if uuid_signature_stability >= 0.7 and cluster.service_uuid_counter:
+        confidence += 0.05
+        identification_basis.append("stable_service_uuid_signature")
+
+    identification_basis = list(dict.fromkeys(identification_basis))
+    confidence = min(confidence, 0.95)
+
+    return IdentityHints(
+        probable_device_label=probable_device_label,
+        probable_device_type=probable_device_type,
+        identity_confidence=confidence,
+        identification_basis=identification_basis,
+    )
 
 
 # ============================================================
@@ -140,6 +351,7 @@ class IdentityResolver:
     - Conservative matching: avoid false merges when evidence is weak
     - Explainability: return score components and reason for each cluster assignment
     - Rolling state: keep recent clusters active for temporal linkage
+    - Enrichment: attach best-effort device identification hints without replacing clustering
     """
 
     def __init__(
@@ -166,7 +378,7 @@ class IdentityResolver:
     def process_record(self, record: Dict[str, Any]) -> Dict[str, Any]:
         """
         Assign a normalized advertisement record to a cluster and return
-        an enriched record with cluster metadata.
+        an enriched record with cluster metadata and best-effort identification hints.
         """
         ts = record.get("ts")
         if not ts:
@@ -176,7 +388,6 @@ class IdentityResolver:
         self._expire_inactive_clusters(now)
 
         addr = normalize_addr(record.get("addr"))
-        addr_type = record.get("addr_type")
 
         # 1) Fast path: same address seen before
         if addr and addr in self.address_to_cluster:
@@ -189,7 +400,7 @@ class IdentityResolver:
                     score=self.direct_address_reuse_score,
                     details={"addr": addr},
                 )
-                return self._annotate_record(record, cluster_id, evidence, action="linked")
+                return self._annotate_record(record, cluster, evidence, action="linked")
 
         # 2) Similarity-based linking
         best_cluster, best_score, best_details = self._find_best_cluster(record)
@@ -206,7 +417,7 @@ class IdentityResolver:
                 score=best_score,
                 details=best_details,
             )
-            return self._annotate_record(record, best_cluster.cluster_id, evidence, action="linked")
+            return self._annotate_record(record, best_cluster, evidence, action="linked")
 
         # 3) No sufficiently strong candidate -> create new cluster
         new_cluster = self._create_cluster(record)
@@ -215,7 +426,7 @@ class IdentityResolver:
             score=1.0,
             details={"message": "No existing cluster exceeded the link threshold."},
         )
-        return self._annotate_record(record, new_cluster.cluster_id, evidence, action="created")
+        return self._annotate_record(record, new_cluster, evidence, action="created")
 
     def process_records(self, records: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return [self.process_record(r) for r in records]
@@ -245,7 +456,7 @@ class IdentityResolver:
         rssi = record.get("rssi")
         adv_type = record.get("adv_type")
 
-        service_uuids = set(record.get("service_uuids") or [])
+        service_uuids = {normalize_uuid(uuid) for uuid in (record.get("service_uuids") or []) if normalize_uuid(uuid)}
         service_data = record.get("service_data") or []
         manufacturer_data = record.get("manufacturer_data") or []
 
@@ -259,21 +470,21 @@ class IdentityResolver:
             self.address_to_cluster[addr] = cluster.cluster_id
 
         if addr_type:
-            cluster.addr_types[addr_type] += 1
+            cluster.addr_types[str(addr_type).lower()] += 1
 
         if local_name:
-            cluster.local_names[local_name] += 1
+            cluster.local_names[str(local_name)] += 1
 
         if adv_type:
-            cluster.adv_type_counter[adv_type] += 1
+            cluster.adv_type_counter[str(adv_type)] += 1
 
         for uuid in service_uuids:
             cluster.service_uuid_counter[uuid] += 1
 
         for entry in service_data:
-            uuid = entry.get("uuid")
+            uuid = normalize_uuid(entry.get("uuid"))
             if uuid:
-                cluster.service_data_uuid_counter[str(uuid).lower()] += 1
+                cluster.service_data_uuid_counter[uuid] += 1
 
         for entry in manufacturer_data:
             company_id = entry.get("company_id")
@@ -330,13 +541,13 @@ class IdentityResolver:
         addr_type = record.get("addr_type")
         adv_type = record.get("adv_type")
 
-        record_uuids = set(record.get("service_uuids") or [])
+        record_uuids = {normalize_uuid(uuid) for uuid in (record.get("service_uuids") or []) if normalize_uuid(uuid)}
         cluster_uuids = set(cluster.service_uuid_counter.keys())
 
         record_service_data_uuids = {
-            str(entry.get("uuid")).lower()
+            normalize_uuid(entry.get("uuid"))
             for entry in (record.get("service_data") or [])
-            if entry.get("uuid") is not None
+            if normalize_uuid(entry.get("uuid")) is not None
         }
         cluster_service_data_uuids = set(cluster.service_data_uuid_counter.keys())
 
@@ -347,9 +558,9 @@ class IdentityResolver:
         }
         cluster_companies = set(cluster.manufacturer_company_counter.keys())
 
-        top_name = cluster.local_names.most_common(1)[0][0] if cluster.local_names else None
-        top_addr_type = cluster.addr_types.most_common(1)[0][0] if cluster.addr_types else None
-        top_adv_type = cluster.adv_type_counter.most_common(1)[0][0] if cluster.adv_type_counter else None
+        top_name = top_counter_value(cluster.local_names)
+        top_addr_type = top_counter_value(cluster.addr_types)
+        top_adv_type = top_counter_value(cluster.adv_type_counter)
 
         feature_scores = {
             "temporal": temporal_similarity(delta_seconds, self.max_gap_seconds),
@@ -358,8 +569,8 @@ class IdentityResolver:
             "service_uuids": jaccard(record_uuids, cluster_uuids),
             "service_data_uuids": jaccard(record_service_data_uuids, cluster_service_data_uuids),
             "manufacturer_companies": jaccard(record_companies, cluster_companies),
-            "addr_type": 1.0 if addr_type and top_addr_type and addr_type == top_addr_type else 0.0,
-            "adv_type": 1.0 if adv_type and top_adv_type and adv_type == top_adv_type else 0.0,
+            "addr_type": 1.0 if addr_type and top_addr_type and str(addr_type).lower() == top_addr_type else 0.0,
+            "adv_type": 1.0 if adv_type and top_adv_type and str(adv_type) == top_adv_type else 0.0,
         }
 
         # Strong evidence bonus: exact repeated address would normally have hit fast path,
@@ -369,13 +580,15 @@ class IdentityResolver:
         else:
             feature_scores["address_reuse"] = 0.0
 
-        # Conservative weights emphasizing stable broadcast artifacts
+        # Conservative weights emphasizing stable broadcast artifacts.
+        # Local name weight is slightly higher now because we are also using it for best-effort identification,
+        # but it still is not strong enough by itself to replace clustering.
         weights = {
-            "address_reuse": 0.40,
+            "address_reuse": 0.38,
             "service_uuids": 0.18,
             "manufacturer_companies": 0.14,
             "service_data_uuids": 0.12,
-            "local_name": 0.08,
+            "local_name": 0.10,
             "temporal": 0.04,
             "rssi": 0.02,
             "addr_type": 0.01,
@@ -384,7 +597,7 @@ class IdentityResolver:
 
         weighted_sum = sum(feature_scores[k] * weights[k] for k in weights)
 
-        # Penalize merges when there is little stable evidence
+        # Penalize merges when there is little stable evidence.
         stable_evidence_count = 0
         if feature_scores["address_reuse"] > 0:
             stable_evidence_count += 1
@@ -397,11 +610,11 @@ class IdentityResolver:
         if feature_scores["local_name"] >= 0.92 and local_name and top_name:
             stable_evidence_count += 1
 
-        # Require at least one meaningful stable signal; otherwise heavily down-rank
+        # Require at least one meaningful stable signal; otherwise heavily down-rank.
         if stable_evidence_count == 0:
             weighted_sum *= 0.45
 
-        # If both observations are almost empty, avoid merging on time/RSSI alone
+        # If both observations are almost empty, avoid merging on time/RSSI alone.
         sparse_record = not (record_uuids or record_companies or record_service_data_uuids or local_name)
         sparse_cluster = not (cluster_uuids or cluster_companies or cluster_service_data_uuids or top_name)
         if sparse_record and sparse_cluster:
@@ -456,17 +669,19 @@ class IdentityResolver:
     def _annotate_record(
         self,
         record: Dict[str, Any],
-        cluster_id: int,
+        cluster: ClusterState,
         evidence: LinkEvidence,
         *,
         action: str,
     ) -> Dict[str, Any]:
+        identity_hints = build_identity_hints(cluster)
         enriched = dict(record)
-        enriched["cluster_id"] = cluster_id
+        enriched["cluster_id"] = cluster.cluster_id
         enriched["cluster_action"] = action
         enriched["link_reason"] = evidence.reason
         enriched["link_confidence"] = round(evidence.score, 3)
         enriched["link_details"] = evidence.details
+        enriched.update(identity_hints.to_dict())
         return enriched
 
 
@@ -489,6 +704,7 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
 def write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for record in records:
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
             f.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 

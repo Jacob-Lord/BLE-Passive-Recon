@@ -4,7 +4,7 @@ import argparse
 import json
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Tuple
 
 
 # ============================================================
@@ -88,7 +88,8 @@ class BLEExposureScoringEngine:
 
     Score design:
     - attack surface      : connectable / discoverable / scannable posture
-    - identifiability     : names, stable signatures, public address behavior
+    - identifiability     : names, stable signatures, public address behavior,
+                            and best-effort device identification confidence
     - trackability        : persistence + stable signatures across time / address behavior
     - service sensitivity : advertised sensitive service classes
 
@@ -104,9 +105,6 @@ class BLEExposureScoringEngine:
         window_start = features["window_start"]
         window_end = features["window_end"]
 
-        # -----------------------------
-        # Read feature inputs
-        # -----------------------------
         observation_count = int(features.get("observation_count", 0))
 
         connectable_fraction = safe_float(features.get("connectable_fraction"))
@@ -118,6 +116,13 @@ class BLEExposureScoringEngine:
 
         local_name_present_fraction = safe_float(features.get("local_name_present_fraction"))
         local_name_stability = safe_float(features.get("local_name_stability"))
+
+        probable_device_label = features.get("probable_device_label")
+        probable_device_label_stability = safe_float(features.get("probable_device_label_stability"))
+        probable_device_type = features.get("probable_device_type")
+        probable_device_type_stability = safe_float(features.get("probable_device_type_stability"))
+        identity_confidence = safe_float(features.get("identity_confidence"))
+        identification_basis = list(features.get("identification_basis", []) or [])
 
         dominant_uuid_signature_fraction = safe_float(features.get("dominant_uuid_signature_fraction"))
         dominant_company_signature_fraction = safe_float(features.get("dominant_company_signature_fraction"))
@@ -137,9 +142,6 @@ class BLEExposureScoringEngine:
         unique_manufacturer_company_count = int(features.get("unique_manufacturer_company_count", 0))
         sparse_observation_fraction = safe_float(features.get("sparse_observation_fraction"))
 
-        # -----------------------------
-        # Component scoring
-        # -----------------------------
         attack_surface_score, attack_drivers = self._score_attack_surface(
             connectable_fraction=connectable_fraction,
             discoverable_fraction=discoverable_fraction,
@@ -151,6 +153,12 @@ class BLEExposureScoringEngine:
             random_addr_fraction=random_addr_fraction,
             local_name_present_fraction=local_name_present_fraction,
             local_name_stability=local_name_stability,
+            probable_device_label=probable_device_label,
+            probable_device_label_stability=probable_device_label_stability,
+            probable_device_type=probable_device_type,
+            probable_device_type_stability=probable_device_type_stability,
+            identity_confidence=identity_confidence,
+            identification_basis=identification_basis,
             dominant_uuid_signature_fraction=dominant_uuid_signature_fraction,
             dominant_company_signature_fraction=dominant_company_signature_fraction,
             unique_service_uuid_count=unique_service_uuid_count,
@@ -172,18 +180,13 @@ class BLEExposureScoringEngine:
             unique_service_uuid_count=unique_service_uuid_count,
         )
 
-        # -----------------------------
-        # Confidence score
-        # -----------------------------
         confidence_score = self._score_confidence(
             observation_count=observation_count,
             sparse_observation_fraction=sparse_observation_fraction,
             cluster_presence_fraction_all_windows=cluster_presence_fraction_all_windows,
+            identity_confidence=identity_confidence,
         )
 
-        # -----------------------------
-        # Final exposure score
-        # -----------------------------
         weighted_exposure = (
             0.30 * attack_surface_score
             + 0.30 * identifiability_score
@@ -191,28 +194,24 @@ class BLEExposureScoringEngine:
             + 0.20 * service_sensitivity_score
         )
 
-        # Slightly damp scores when evidence is weak
         confidence_factor = 0.60 + 0.40 * (confidence_score / 100.0)
         exposure_score = round(weighted_exposure * confidence_factor, 2)
 
         exposure_tier = self._tier(exposure_score)
 
-        # -----------------------------
-        # High-exposure indicator baseline
-        # -----------------------------
         high_exposure_indicator, high_exposure_reasons = self._high_exposure_indicator(
             connectable_fraction=connectable_fraction,
             local_name_present_fraction=local_name_present_fraction,
             public_addr_fraction=public_addr_fraction,
+            identity_confidence=identity_confidence,
+            probable_device_label=probable_device_label,
+            probable_device_type=probable_device_type,
             dominant_uuid_signature_fraction=dominant_uuid_signature_fraction,
             dominant_company_signature_fraction=dominant_company_signature_fraction,
             cluster_presence_fraction_all_windows=cluster_presence_fraction_all_windows,
             sensitive_service_count=sensitive_service_count,
         )
 
-        # -----------------------------
-        # Drivers
-        # -----------------------------
         score_components = {
             "attack_surface_score": round(attack_surface_score, 2),
             "identifiability_score": round(identifiability_score, 2),
@@ -228,19 +227,15 @@ class BLEExposureScoringEngine:
             cluster_id=cluster_id,
             window_start=window_start,
             window_end=window_end,
-
             exposure_score=exposure_score,
             confidence_score=round(confidence_score, 2),
             exposure_tier=exposure_tier,
-
             attack_surface_score=round(attack_surface_score, 2),
             identifiability_score=round(identifiability_score, 2),
             trackability_score=round(trackability_score, 2),
             service_sensitivity_score=round(service_sensitivity_score, 2),
-
             high_exposure_indicator=high_exposure_indicator,
             high_exposure_reasons=high_exposure_reasons,
-
             score_drivers=score_drivers,
             score_components=score_components,
         )
@@ -281,6 +276,12 @@ class BLEExposureScoringEngine:
         random_addr_fraction: float,
         local_name_present_fraction: float,
         local_name_stability: float,
+        probable_device_label: Any,
+        probable_device_label_stability: float,
+        probable_device_type: Any,
+        probable_device_type_stability: float,
+        identity_confidence: float,
+        identification_basis: List[str],
         dominant_uuid_signature_fraction: float,
         dominant_company_signature_fraction: float,
         unique_service_uuid_count: int,
@@ -290,33 +291,43 @@ class BLEExposureScoringEngine:
         stable_name = clamp(local_name_present_fraction * local_name_stability)
         stable_uuid_sig = clamp(dominant_uuid_signature_fraction)
         stable_company_sig = clamp(dominant_company_signature_fraction)
-
-        # Small bonus for richer identifiable broadcast surface
         uuid_surface_bonus = fraction_from_count(unique_service_uuid_count, 8)
         company_surface_bonus = fraction_from_count(unique_manufacturer_company_count, 3)
 
+        identity_label_strength = clamp(identity_confidence * probable_device_label_stability)
+        identity_type_strength = clamp(identity_confidence * probable_device_type_stability)
+        identity_basis_strength = fraction_from_count(len(identification_basis), 4)
+
         raw = (
-            0.28 * public_ident
-            + 0.28 * stable_name
-            + 0.22 * stable_uuid_sig
-            + 0.16 * stable_company_sig
-            + 0.04 * uuid_surface_bonus
-            + 0.02 * company_surface_bonus
+            0.22 * public_ident
+            + 0.20 * stable_name
+            + 0.18 * stable_uuid_sig
+            + 0.12 * stable_company_sig
+            + 0.12 * identity_label_strength
+            + 0.08 * identity_type_strength
+            + 0.04 * identity_basis_strength
+            + 0.03 * uuid_surface_bonus
+            + 0.01 * company_surface_bonus
         )
 
-        # Pure random addressing with no name reduces identifiability a bit
         if random_addr_fraction > 0.8 and stable_name < 0.1 and public_ident < 0.1:
             raw *= 0.85
 
         score = raw * 100.0
 
+        identity_label_desc = "Stable probable device label inferred" if probable_device_label else "No probable device label inferred"
+        identity_type_desc = "Stable probable device type inferred" if probable_device_type else "No probable device type inferred"
+
         drivers = [
-            self._driver("public_addr_fraction", public_addr_fraction, 28.0, "Public address behavior increases identifiability"),
-            self._driver("stable_local_name", stable_name, 28.0, "Stable local name observed"),
-            self._driver("dominant_uuid_signature_fraction", dominant_uuid_signature_fraction, 22.0, "Stable service UUID signature observed"),
-            self._driver("dominant_company_signature_fraction", dominant_company_signature_fraction, 16.0, "Stable manufacturer signature observed"),
-            self._driver("unique_service_uuid_count", uuid_surface_bonus, 4.0, "Broader advertised service surface"),
-            self._driver("unique_manufacturer_company_count", company_surface_bonus, 2.0, "Manufacturer/company artifacts present"),
+            self._driver("public_addr_fraction", public_addr_fraction, 22.0, "Public address behavior increases identifiability"),
+            self._driver("stable_local_name", stable_name, 20.0, "Stable local name observed"),
+            self._driver("dominant_uuid_signature_fraction", dominant_uuid_signature_fraction, 18.0, "Stable service UUID signature observed"),
+            self._driver("dominant_company_signature_fraction", dominant_company_signature_fraction, 12.0, "Stable manufacturer signature observed"),
+            self._driver("identity_label_strength", identity_label_strength, 12.0, identity_label_desc),
+            self._driver("identity_type_strength", identity_type_strength, 8.0, identity_type_desc),
+            self._driver("identification_basis", identity_basis_strength, 4.0, "Multiple identification bases available"),
+            self._driver("unique_service_uuid_count", uuid_surface_bonus, 3.0, "Broader advertised service surface"),
+            self._driver("unique_manufacturer_company_count", company_surface_bonus, 1.0, "Manufacturer/company artifacts present"),
         ]
         return score, drivers
 
@@ -332,10 +343,6 @@ class BLEExposureScoringEngine:
     ) -> Tuple[float, List[Dict[str, Any]]]:
         persistence = clamp(cluster_presence_fraction_all_windows)
         stable_tokens = clamp(max(dominant_uuid_signature_fraction, dominant_company_signature_fraction))
-
-        # Trackability can come from either:
-        # 1) stable single address / long-term presence
-        # 2) address changes while signatures stay stable
         address_stability = clamp(dominant_address_fraction)
 
         if unique_addresses > 1 or address_change_events > 0:
@@ -393,15 +400,18 @@ class BLEExposureScoringEngine:
         observation_count: int,
         sparse_observation_fraction: float,
         cluster_presence_fraction_all_windows: float,
+        identity_confidence: float,
     ) -> float:
         obs_strength = fraction_from_count(observation_count, 20)
         persistence_strength = clamp(cluster_presence_fraction_all_windows)
         sparsity_penalty = clamp(1.0 - sparse_observation_fraction)
+        identity_strength = clamp(identity_confidence)
 
         raw = (
-            0.55 * obs_strength
-            + 0.25 * persistence_strength
+            0.45 * obs_strength
+            + 0.20 * persistence_strength
             + 0.20 * sparsity_penalty
+            + 0.15 * identity_strength
         )
         return raw * 100.0
 
@@ -415,6 +425,9 @@ class BLEExposureScoringEngine:
         connectable_fraction: float,
         local_name_present_fraction: float,
         public_addr_fraction: float,
+        identity_confidence: float,
+        probable_device_label: Any,
+        probable_device_type: Any,
         dominant_uuid_signature_fraction: float,
         dominant_company_signature_fraction: float,
         cluster_presence_fraction_all_windows: float,
@@ -440,8 +453,15 @@ class BLEExposureScoringEngine:
         if sensitive_service_count >= 1:
             reasons.append("sensitive_service_advertised")
 
-        # Require connectability plus at least one additional strong signal,
-        # or multiple strong passive exposure signals without connectability.
+        if identity_confidence >= 0.7:
+            reasons.append("strong_identity_inference")
+
+        if probable_device_label:
+            reasons.append("probable_device_label")
+
+        if probable_device_type:
+            reasons.append(f"probable_device_type:{probable_device_type}")
+
         indicator = (
             ("connectable_advertising" in reasons and len(reasons) >= 2)
             or len(reasons) >= 3
@@ -539,8 +559,12 @@ def main() -> None:
         ranked = rank_latest_by_cluster(scored_rows)[: args.print_top]
         print("\nTop ranked clusters (latest window per cluster):")
         for row in ranked:
+            label = row.get("probable_device_label") or "unknown"
+            dtype = row.get("probable_device_type") or "unknown"
             print(
                 f"cluster={row['cluster_id']} "
+                f"label={label} "
+                f"type={dtype} "
                 f"score={row['exposure_score']:.2f} "
                 f"confidence={row['confidence_score']:.2f} "
                 f"tier={row['exposure_tier']} "

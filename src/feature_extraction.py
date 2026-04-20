@@ -13,10 +13,10 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 # Helpers
 # ============================================================
 
-CONNECTABLE_ADV_TYPES = {"ADV_IND", "ADV_DIRECT_IND", "connectable"} 
+CONNECTABLE_ADV_TYPES = {"ADV_IND", "ADV_DIRECT_IND", "connectable"}
 SCANNABLE_ADV_TYPES = {"ADV_IND", "ADV_SCAN_IND", "scannable"}
 
-BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb" # This is the standard Bluetooth Base UUID suffix used for 16-bit and 32-bit UUIDs to form full 128-bit UUIDs.
+BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"  # This is the standard Bluetooth Base UUID suffix used for 16-bit and 32-bit UUIDs to form full 128-bit UUIDs.
 
 # This mapping is based on commonly known Bluetooth SIG-adopted service UUIDs that are often associated with sensitive functionalities. It can be expanded as needed.
 SENSITIVE_SERVICE_MAP: Dict[str, str] = {
@@ -77,6 +77,7 @@ def write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, separators=(",", ":")) + "\n")
+            f.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
 def mean(values: Sequence[float]) -> Optional[float]:
@@ -134,6 +135,15 @@ def get_flag_bool(flags: Optional[Dict[str, Any]], key: str) -> bool:
     return bool(flags.get(key, False))
 
 
+def counter_top_fraction(counter: Counter[str]) -> float:
+    if not counter:
+        return 0.0
+    total = sum(counter.values())
+    if total <= 0:
+        return 0.0
+    return counter.most_common(1)[0][1] / total
+
+
 # ============================================================
 # Dataclass
 # ============================================================
@@ -141,43 +151,50 @@ def get_flag_bool(flags: Optional[Dict[str, Any]], key: str) -> bool:
 # This dataclass represents the extracted features for a specific cluster within a specific time window. Each instance corresponds to one cluster-window combination.
 @dataclass
 class ClusterWindowFeatures:
-    cluster_id: int # Unique identifier for the cluster (e.g., from clustering algorithm)
+    cluster_id: int  # Unique identifier for the cluster (e.g., from clustering algorithm)
 
     # The time window for which these features are computed. The window is defined as [window_start, window_end), where window_start is inclusive and window_end is exclusive. Both are in ISO 8601 format (UTC).
-    window_start: str 
+    window_start: str
     window_end: str
 
     observation_count: int
-    coverage_seconds: float # Total time in seconds between the first and last observation in this window for this cluster
-    avg_interarrival_seconds: Optional[float] # Average time in seconds between consecutive observations in this window for this cluster (None if only one observation)
+    coverage_seconds: float  # Total time in seconds between the first and last observation in this window for this cluster
+    avg_interarrival_seconds: Optional[float]  # Average time in seconds between consecutive observations in this window for this cluster (None if only one observation)
 
     # RSSI (Received Signal Strength Indicator) features, if available. These can provide insights into the signal strength and potential proximity of the device(s) in this cluster during this window.
     avg_rssi: Optional[float]
     min_rssi: Optional[int]
     max_rssi: Optional[int]
 
-    unique_addresses: int # Number of unique MAC addresses observed in this cluster-window. A higher number may indicate more devices or more address randomization.
-    address_change_events: int # Number of times the observed address changed from one observation to the next within this cluster-window. This can be an indicator of address randomization behavior.
-    dominant_address_fraction: float # Fraction of observations in this cluster-window that share the most common address. A higher fraction may indicate a stable device, while a lower fraction may suggest more randomization or multiple devices.
+    unique_addresses: int  # Number of unique MAC addresses observed in this cluster-window. A higher number may indicate more devices or more address randomization.
+    address_change_events: int  # Number of times the observed address changed from one observation to the next within this cluster-window. This can be an indicator of address randomization behavior.
+    dominant_address_fraction: float  # Fraction of observations in this cluster-window that share the most common address. A higher fraction may indicate a stable device, while a lower fraction may suggest more randomization or multiple devices.
 
     # Address type distribution, if available. This can provide insights into the types of addresses being observed (e.g., public vs random) and their prevalence within this cluster-window.
     public_addr_fraction: float
     random_addr_fraction: float
     unknown_addr_type_fraction: float
 
-    connectable_fraction: float # Fraction of observations in this cluster-window that are connectable advertisements, if adv_type information is available. This can indicate the presence of devices that are open to connections.
+    connectable_fraction: float  # Fraction of observations in this cluster-window that are connectable advertisements, if adv_type information is available. This can indicate the presence of devices that are open to connections.
     scannable_fraction: float
 
-    discoverable_fraction: float # Fraction of observations in this cluster-window that are discoverable (either general or limited), if flags information is available. This can indicate the presence of devices that are advertising themselves for discovery.
+    discoverable_fraction: float  # Fraction of observations in this cluster-window that are discoverable (either general or limited), if flags information is available. This can indicate the presence of devices that are advertising themselves for discovery.
     general_discoverable_fraction: float
     limited_discoverable_fraction: float
 
-    local_name_present_fraction: float # Fraction of observations in this cluster-window that include a local name. This can indicate how often devices are advertising a human-readable name, which may be useful for identification.
+    local_name_present_fraction: float  # Fraction of observations in this cluster-window that include a local name. This can indicate how often devices are advertising a human-readable name, which may be useful for identification.
     top_local_name: Optional[str]
     local_name_stability: float
 
-    unique_service_uuid_count: int # Number of unique service UUIDs observed in this cluster-window. This can indicate the diversity of services being advertised by devices in this cluster during this window. 
-    top_service_uuids: List[str] # The most common service UUIDs observed in this cluster-window, up to the top_k specified in the FeatureExtractor. This can provide insights into the types of services that are prevalent among the devices in this cluster during this window.
+    probable_device_label: Optional[str]
+    probable_device_label_stability: float
+    probable_device_type: Optional[str]
+    probable_device_type_stability: float
+    identity_confidence: float
+    identification_basis: List[str]
+
+    unique_service_uuid_count: int  # Number of unique service UUIDs observed in this cluster-window. This can indicate the diversity of services being advertised by devices in this cluster during this window.
+    top_service_uuids: List[str]  # The most common service UUIDs observed in this cluster-window, up to the top_k specified in the FeatureExtractor. This can provide insights into the types of services that are prevalent among the devices in this cluster during this window.
     dominant_service_uuid_fraction: float
     dominant_uuid_signature_fraction: float
 
@@ -189,7 +206,7 @@ class ClusterWindowFeatures:
     dominant_company_fraction: float
     dominant_company_signature_fraction: float
 
-    sensitive_service_count: int # Number of unique sensitive service categories observed in this cluster-window based on the SENSITIVE_SERVICE_MAP. This can indicate the presence of potentially sensitive devices or activities within this cluster during this window.
+    sensitive_service_count: int  # Number of unique sensitive service categories observed in this cluster-window based on the SENSITIVE_SERVICE_MAP. This can indicate the presence of potentially sensitive devices or activities within this cluster during this window.
     sensitive_service_categories: List[str]
 
     sparse_observation_fraction: float
@@ -229,15 +246,15 @@ class FeatureExtractor:
             if cluster_id is None or ts is None:
                 continue
 
-            dt = parse_iso_ts(ts) # Parse the timestamp into a datetime object
+            dt = parse_iso_ts(ts)  # Parse the timestamp into a datetime object
             w_start = to_iso(floor_to_window(dt, self.window_seconds))
-            key = (int(cluster_id), w_start) # Grouping key is a tuple of (cluster_id, window_start)
+            key = (int(cluster_id), w_start)  # Grouping key is a tuple of (cluster_id, window_start)
 
             grouped[key].append(record)
             all_window_starts.add(w_start)
             cluster_to_windows[int(cluster_id)].add(w_start)
 
-        total_windows_in_capture = len(all_window_starts) # Total number of unique windows across the entire capture, used for calculating presence fractions.
+        total_windows_in_capture = len(all_window_starts)  # Total number of unique windows across the entire capture, used for calculating presence fractions.
         feature_rows: List[Dict[str, Any]] = []
 
         for (cluster_id, window_start), group in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1])):
@@ -283,6 +300,10 @@ class FeatureExtractor:
         addr_type_counter: Counter[str] = Counter()
         adv_type_counter: Counter[str] = Counter()
         name_counter: Counter[str] = Counter()
+        probable_label_counter: Counter[str] = Counter()
+        probable_type_counter: Counter[str] = Counter()
+        identification_basis_counter: Counter[str] = Counter()
+        identity_confidences: List[float] = []
 
         service_uuid_counter: Counter[str] = Counter()
         service_data_uuid_counter: Counter[str] = Counter()
@@ -303,6 +324,11 @@ class FeatureExtractor:
             adv_type = record.get("adv_type")
             local_name = record.get("local_name")
             flags = record.get("flags")
+
+            probable_label = record.get("probable_device_label")
+            probable_type = record.get("probable_device_type")
+            identity_confidence = record.get("identity_confidence")
+            identification_basis = record.get("identification_basis") or []
 
             service_uuids = {
                 normalize_uuid(u)
@@ -335,6 +361,22 @@ class FeatureExtractor:
             if local_name:
                 name_counter[str(local_name)] += 1
 
+            if probable_label:
+                probable_label_counter[str(probable_label)] += 1
+
+            if probable_type:
+                probable_type_counter[str(probable_type)] += 1
+
+            try:
+                if identity_confidence is not None:
+                    identity_confidences.append(float(identity_confidence))
+            except (TypeError, ValueError):
+                pass
+
+            for basis in identification_basis:
+                if basis:
+                    identification_basis_counter[str(basis)] += 1
+
             for uuid in service_uuids:
                 service_uuid_counter[uuid] += 1
                 if uuid in SENSITIVE_SERVICE_MAP:
@@ -358,9 +400,13 @@ class FeatureExtractor:
                 sparse_observation_count += 1
 
         top_local_name = name_counter.most_common(1)[0][0] if name_counter else None
+        top_probable_label = probable_label_counter.most_common(1)[0][0] if probable_label_counter else None
+        top_probable_type = probable_type_counter.most_common(1)[0][0] if probable_type_counter else None
+
         top_service_uuids = [u for u, _ in service_uuid_counter.most_common(self.top_k)]
         top_service_data_uuids = [u for u, _ in service_data_uuid_counter.most_common(self.top_k)]
         top_manufacturer_companies = [c for c, _ in manufacturer_company_counter.most_common(self.top_k)]
+        top_identification_basis = [b for b, _ in identification_basis_counter.most_common(self.top_k)]
 
         connectable_count = sum(1 for r in group if is_connectable_adv(r.get("adv_type")))
         scannable_count = sum(1 for r in group if is_scannable_adv(r.get("adv_type")))
@@ -384,9 +430,9 @@ class FeatureExtractor:
         dominant_address_fraction = (
             address_counter.most_common(1)[0][1] / obs_count if address_counter else 0.0
         )
-        local_name_stability = (
-            name_counter.most_common(1)[0][1] / sum(name_counter.values()) if name_counter else 0.0
-        )
+        local_name_stability = counter_top_fraction(name_counter)
+        probable_label_stability = counter_top_fraction(probable_label_counter)
+        probable_type_stability = counter_top_fraction(probable_type_counter)
         dominant_service_uuid_fraction = (
             service_uuid_counter.most_common(1)[0][1] / obs_count if service_uuid_counter else 0.0
         )
@@ -433,6 +479,13 @@ class FeatureExtractor:
             local_name_present_fraction=round(sum(name_counter.values()) / obs_count, 3),
             top_local_name=top_local_name,
             local_name_stability=round(local_name_stability, 3),
+
+            probable_device_label=top_probable_label,
+            probable_device_label_stability=round(probable_label_stability, 3),
+            probable_device_type=top_probable_type,
+            probable_device_type_stability=round(probable_type_stability, 3),
+            identity_confidence=round(mean(identity_confidences) or 0.0, 3),
+            identification_basis=top_identification_basis,
 
             unique_service_uuid_count=len(service_uuid_counter),
             top_service_uuids=top_service_uuids,
