@@ -16,9 +16,8 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 CONNECTABLE_ADV_TYPES = {"ADV_IND", "ADV_DIRECT_IND", "connectable"}
 SCANNABLE_ADV_TYPES = {"ADV_IND", "ADV_SCAN_IND", "scannable"}
 
-BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"  # This is the standard Bluetooth Base UUID suffix used for 16-bit and 32-bit UUIDs to form full 128-bit UUIDs.
+BASE_UUID_SUFFIX = "-0000-1000-8000-00805f9b34fb"
 
-# This mapping is based on commonly known Bluetooth SIG-adopted service UUIDs that are often associated with sensitive functionalities. It can be expanded as needed.
 SENSITIVE_SERVICE_MAP: Dict[str, str] = {
     # Human interface / input
     f"00001812{BASE_UUID_SUFFIX}": "human_interface",
@@ -77,7 +76,6 @@ def write_jsonl(path: Path, records: Iterable[Dict[str, Any]]) -> None:
     with path.open("w", encoding="utf-8") as f:
         for record in records:
             f.write(json.dumps(record, separators=(",", ":")) + "\n")
-            f.write(json.dumps(record, separators=(",", ":")) + "\n")
 
 
 def mean(values: Sequence[float]) -> Optional[float]:
@@ -94,11 +92,9 @@ def normalize_uuid(uuid: Any) -> Optional[str]:
     if not s:
         return None
 
-    # Full 128-bit UUID already
     if len(s) == 36 and "-" in s:
         return s
 
-    # 16-bit hex short form
     if len(s) == 4:
         try:
             int(s, 16)
@@ -106,7 +102,6 @@ def normalize_uuid(uuid: Any) -> Optional[str]:
         except ValueError:
             return s
 
-    # 32-bit hex short form
     if len(s) == 8:
         try:
             int(s, 16)
@@ -148,41 +143,36 @@ def counter_top_fraction(counter: Counter[str]) -> float:
 # Dataclass
 # ============================================================
 
-# This dataclass represents the extracted features for a specific cluster within a specific time window. Each instance corresponds to one cluster-window combination.
 @dataclass
 class ClusterWindowFeatures:
-    cluster_id: int  # Unique identifier for the cluster (e.g., from clustering algorithm)
-
-    # The time window for which these features are computed. The window is defined as [window_start, window_end), where window_start is inclusive and window_end is exclusive. Both are in ISO 8601 format (UTC).
+    cluster_id: int
     window_start: str
     window_end: str
 
     observation_count: int
-    coverage_seconds: float  # Total time in seconds between the first and last observation in this window for this cluster
-    avg_interarrival_seconds: Optional[float]  # Average time in seconds between consecutive observations in this window for this cluster (None if only one observation)
+    coverage_seconds: float
+    avg_interarrival_seconds: Optional[float]
 
-    # RSSI (Received Signal Strength Indicator) features, if available. These can provide insights into the signal strength and potential proximity of the device(s) in this cluster during this window.
     avg_rssi: Optional[float]
     min_rssi: Optional[int]
     max_rssi: Optional[int]
 
-    unique_addresses: int  # Number of unique MAC addresses observed in this cluster-window. A higher number may indicate more devices or more address randomization.
-    address_change_events: int  # Number of times the observed address changed from one observation to the next within this cluster-window. This can be an indicator of address randomization behavior.
-    dominant_address_fraction: float  # Fraction of observations in this cluster-window that share the most common address. A higher fraction may indicate a stable device, while a lower fraction may suggest more randomization or multiple devices.
+    unique_addresses: int
+    address_change_events: int
+    dominant_address_fraction: float
 
-    # Address type distribution, if available. This can provide insights into the types of addresses being observed (e.g., public vs random) and their prevalence within this cluster-window.
     public_addr_fraction: float
     random_addr_fraction: float
     unknown_addr_type_fraction: float
 
-    connectable_fraction: float  # Fraction of observations in this cluster-window that are connectable advertisements, if adv_type information is available. This can indicate the presence of devices that are open to connections.
+    connectable_fraction: float
     scannable_fraction: float
 
-    discoverable_fraction: float  # Fraction of observations in this cluster-window that are discoverable (either general or limited), if flags information is available. This can indicate the presence of devices that are advertising themselves for discovery.
+    discoverable_fraction: float
     general_discoverable_fraction: float
     limited_discoverable_fraction: float
 
-    local_name_present_fraction: float  # Fraction of observations in this cluster-window that include a local name. This can indicate how often devices are advertising a human-readable name, which may be useful for identification.
+    local_name_present_fraction: float
     top_local_name: Optional[str]
     local_name_stability: float
 
@@ -193,8 +183,14 @@ class ClusterWindowFeatures:
     identity_confidence: float
     identification_basis: List[str]
 
-    unique_service_uuid_count: int  # Number of unique service UUIDs observed in this cluster-window. This can indicate the diversity of services being advertised by devices in this cluster during this window.
-    top_service_uuids: List[str]  # The most common service UUIDs observed in this cluster-window, up to the top_k specified in the FeatureExtractor. This can provide insights into the types of services that are prevalent among the devices in this cluster during this window.
+    # Optional synthetic evaluation metadata
+    eval_expected_high_exposure: bool
+    eval_truth_device_type: Optional[str]
+    eval_truth_device_type_stability: float
+    eval_scenario_name: Optional[str]
+
+    unique_service_uuid_count: int
+    top_service_uuids: List[str]
     dominant_service_uuid_fraction: float
     dominant_uuid_signature_fraction: float
 
@@ -206,7 +202,7 @@ class ClusterWindowFeatures:
     dominant_company_fraction: float
     dominant_company_signature_fraction: float
 
-    sensitive_service_count: int  # Number of unique sensitive service categories observed in this cluster-window based on the SENSITIVE_SERVICE_MAP. This can indicate the presence of potentially sensitive devices or activities within this cluster during this window.
+    sensitive_service_count: int
     sensitive_service_categories: List[str]
 
     sparse_observation_fraction: float
@@ -230,31 +226,27 @@ class FeatureExtractor:
         if not records_list:
             return []
 
-        # Sort to ensure stable temporal behavior
         records_list.sort(key=lambda r: (r.get("cluster_id", -1), r.get("ts", "")))
 
-        # Group records into tumbling windows per cluster
         grouped: Dict[Tuple[int, str], List[Dict[str, Any]]] = defaultdict(list)
         all_window_starts: Set[str] = set()
         cluster_to_windows: Dict[int, Set[str]] = defaultdict(set)
 
-        # Iterate through all records and assign them to the appropriate cluster-window group based on their cluster_id and timestamp.
-        # We also keep track of all unique window start times and which windows each cluster appears in for later use in feature calculations.
         for record in records_list:
             cluster_id = record.get("cluster_id")
             ts = record.get("ts")
             if cluster_id is None or ts is None:
                 continue
 
-            dt = parse_iso_ts(ts)  # Parse the timestamp into a datetime object
+            dt = parse_iso_ts(ts)
             w_start = to_iso(floor_to_window(dt, self.window_seconds))
-            key = (int(cluster_id), w_start)  # Grouping key is a tuple of (cluster_id, window_start)
+            key = (int(cluster_id), w_start)
 
             grouped[key].append(record)
             all_window_starts.add(w_start)
             cluster_to_windows[int(cluster_id)].add(w_start)
 
-        total_windows_in_capture = len(all_window_starts)  # Total number of unique windows across the entire capture, used for calculating presence fractions.
+        total_windows_in_capture = len(all_window_starts)
         feature_rows: List[Dict[str, Any]] = []
 
         for (cluster_id, window_start), group in sorted(grouped.items(), key=lambda item: (item[0][0], item[0][1])):
@@ -302,6 +294,8 @@ class FeatureExtractor:
         name_counter: Counter[str] = Counter()
         probable_label_counter: Counter[str] = Counter()
         probable_type_counter: Counter[str] = Counter()
+        eval_truth_device_type_counter: Counter[str] = Counter()
+        eval_scenario_counter: Counter[str] = Counter()
         identification_basis_counter: Counter[str] = Counter()
         identity_confidences: List[float] = []
 
@@ -315,6 +309,7 @@ class FeatureExtractor:
         sensitive_categories: Set[str] = set()
         sparse_observation_count = 0
         address_change_events = 0
+        eval_expected_high_exposure = False
 
         prev_addr: Optional[str] = None
 
@@ -323,12 +318,15 @@ class FeatureExtractor:
             addr_type = record.get("addr_type")
             adv_type = record.get("adv_type")
             local_name = record.get("local_name")
-            flags = record.get("flags")
 
             probable_label = record.get("probable_device_label")
             probable_type = record.get("probable_device_type")
+            eval_truth_device_type = record.get("truth_device_type")
+            eval_scenario_name = record.get("scenario_name")
             identity_confidence = record.get("identity_confidence")
             identification_basis = record.get("identification_basis") or []
+
+            eval_expected_high_exposure = eval_expected_high_exposure or bool(record.get("expected_high_exposure", False))
 
             service_uuids = {
                 normalize_uuid(u)
@@ -367,6 +365,12 @@ class FeatureExtractor:
             if probable_type:
                 probable_type_counter[str(probable_type)] += 1
 
+            if eval_truth_device_type:
+                eval_truth_device_type_counter[str(eval_truth_device_type)] += 1
+
+            if eval_scenario_name:
+                eval_scenario_counter[str(eval_scenario_name)] += 1
+
             try:
                 if identity_confidence is not None:
                     identity_confidences.append(float(identity_confidence))
@@ -402,6 +406,8 @@ class FeatureExtractor:
         top_local_name = name_counter.most_common(1)[0][0] if name_counter else None
         top_probable_label = probable_label_counter.most_common(1)[0][0] if probable_label_counter else None
         top_probable_type = probable_type_counter.most_common(1)[0][0] if probable_type_counter else None
+        top_eval_truth_device_type = eval_truth_device_type_counter.most_common(1)[0][0] if eval_truth_device_type_counter else None
+        top_eval_scenario_name = eval_scenario_counter.most_common(1)[0][0] if eval_scenario_counter else None
 
         top_service_uuids = [u for u, _ in service_uuid_counter.most_common(self.top_k)]
         top_service_data_uuids = [u for u, _ in service_data_uuid_counter.most_common(self.top_k)]
@@ -411,17 +417,17 @@ class FeatureExtractor:
         connectable_count = sum(1 for r in group if is_connectable_adv(r.get("adv_type")))
         scannable_count = sum(1 for r in group if is_scannable_adv(r.get("adv_type")))
 
-        discoverable_count = sum(
-            1 for r in group
-            if get_flag_bool(r.get("flags"), "general_discoverable")
-            or get_flag_bool(r.get("flags"), "limited_discoverable")
-        )
-        general_discoverable_count = sum(
-            1 for r in group if get_flag_bool(r.get("flags"), "general_discoverable")
-        )
-        limited_discoverable_count = sum(
-            1 for r in group if get_flag_bool(r.get("flags"), "limited_discoverable")
-        )
+        discoverable_count = 0
+        general_discoverable_count = 0
+        limited_discoverable_count = 0
+        for r in group:
+            flags = r.get("flags")
+            if get_flag_bool(flags, "general_discoverable") or get_flag_bool(flags, "limited_discoverable"):
+                discoverable_count += 1
+            if get_flag_bool(flags, "general_discoverable"):
+                general_discoverable_count += 1
+            if get_flag_bool(flags, "limited_discoverable"):
+                limited_discoverable_count += 1
 
         public_count = addr_type_counter.get("public", 0)
         random_count = addr_type_counter.get("random", 0)
@@ -433,6 +439,7 @@ class FeatureExtractor:
         local_name_stability = counter_top_fraction(name_counter)
         probable_label_stability = counter_top_fraction(probable_label_counter)
         probable_type_stability = counter_top_fraction(probable_type_counter)
+        eval_truth_device_type_stability = counter_top_fraction(eval_truth_device_type_counter)
         dominant_service_uuid_fraction = (
             service_uuid_counter.most_common(1)[0][1] / obs_count if service_uuid_counter else 0.0
         )
@@ -453,11 +460,9 @@ class FeatureExtractor:
 
             observation_count=obs_count,
             coverage_seconds=round(coverage_seconds, 3),
-            avg_interarrival_seconds=(
-                round(mean(interarrivals), 3) if interarrivals else None
-            ),
+            avg_interarrival_seconds=round(mean(interarrivals), 3) if interarrivals else None,
 
-            avg_rssi=(round(mean(rssis), 3) if rssis else None),
+            avg_rssi=round(mean(rssis), 3) if rssis else None,
             min_rssi=min(rssis) if rssis else None,
             max_rssi=max(rssis) if rssis else None,
 
@@ -486,6 +491,11 @@ class FeatureExtractor:
             probable_device_type_stability=round(probable_type_stability, 3),
             identity_confidence=round(mean(identity_confidences) or 0.0, 3),
             identification_basis=top_identification_basis,
+
+            eval_expected_high_exposure=eval_expected_high_exposure,
+            eval_truth_device_type=top_eval_truth_device_type,
+            eval_truth_device_type_stability=round(eval_truth_device_type_stability, 3),
+            eval_scenario_name=top_eval_scenario_name,
 
             unique_service_uuid_count=len(service_uuid_counter),
             top_service_uuids=top_service_uuids,

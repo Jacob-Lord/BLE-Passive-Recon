@@ -10,8 +10,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from inventory_evaluation import InventoryEvaluator, read_jsonl as read_inventory_jsonl
 from evaluate_clustering import evaluate_rows as evaluate_clustering_rows
-from coverage_at_n import compute_coverage, read_jsonl as read_scores_jsonl
-from spearman_rank_stability import compare_two_files
+from evaluation.coverage_at_n import compute_coverage, read_jsonl as read_scores_jsonl
+from evaluation.spearman_rank_stability import compare_two_files
 from scoring_engine import score_features_jsonl
 
 
