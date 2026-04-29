@@ -53,7 +53,7 @@ Evaluation and analysis:
 Suggested Python packages:
 
 ```bash
-pip install bleak matplotlib
+pip install bleak
 ```
 
 ## Installation
