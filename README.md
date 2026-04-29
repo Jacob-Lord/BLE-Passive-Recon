@@ -50,9 +50,6 @@ Evaluation and analysis:
 - BLE-capable adapter
 - `bleak` for capture
 
-Optional:
-- `matplotlib` for plotting
-
 Suggested Python packages:
 
 ```bash
