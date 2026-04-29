@@ -51,12 +51,6 @@ Evaluation and analysis:
 - `bleak` for capture
 - All requirements are provided in the `requirements.txt` file
 
-Suggested Python packages:
-
-```bash
-pip install -r requirements.txt
-```
-
 ## Installation
 
 Clone the repository and enter the project directory:
@@ -69,7 +63,7 @@ cd <your-repo-name>
 Install dependencies:
 
 ```bash
-pip install bleak matplotlib
+pip install -r requirements.txt
 ```
 
 ## Data Format
@@ -361,6 +355,11 @@ Each scored record includes:
   - trackability
   - service sensitivity
 - `score_drivers` — top features contributing to the score
+
+## Troubleshooting
+
+- Verify that proper paths are being included when referencing files in commands.
+- Ensure that your Bluetooth adapter is enabled on your machine.
 
 ## Notes and Limitations
 
