@@ -49,11 +49,12 @@ Evaluation and analysis:
 - Windows 11 for BLE capture in the current implementation
 - BLE-capable adapter
 - `bleak` for capture
+- All requirements are provided in the `requirements.txt` file
 
 Suggested Python packages:
 
 ```bash
-pip install bleak
+pip install -r requirements.txt
 ```
 
 ## Installation
