@@ -94,6 +94,7 @@ python main.py capture captures/ble_capture.jsonl
 ```
 
 Passive scan mode is the default. To use active scanning:
+**Do not actively scan unknown BLE devices without the owner's permission!**
 
 ```bash
 python main.py capture captures/ble_capture.jsonl --scanning-mode active
