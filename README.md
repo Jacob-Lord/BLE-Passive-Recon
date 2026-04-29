@@ -324,20 +324,6 @@ python evaluate_all.py \
   --output-json all_metrics.json
 ```
 
-## Visualization
-
-Generate a cluster timeline and score-over-time plots:
-
-```bash
-python plot_clusters.py outputs/ble_scores.jsonl --out-dir plots --top-n 10
-```
-
-Explicit cluster selection:
-
-```bash
-python plot_clusters.py outputs/ble_scores.jsonl --out-dir plots --cluster-ids 3 7 12
-```
-
 ## Output Interpretation
 
 Each scored record includes:
