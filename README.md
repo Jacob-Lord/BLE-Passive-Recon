@@ -364,8 +364,9 @@ Use this project only in environments where you have authorization to collect BL
 ## Future Improvements
 
 - SQLite-backed storage and query workflows
-- richer UUID/service mapping
-- configurable scoring weights
-- improved address-rotation handling
-- optional Linux/BlueZ capture backend
-- stronger automated evaluation dashboards
+- Richer UUID/service mapping
+- Configurable scoring weights
+- Improved address-rotation handling
+- Optional Linux/BlueZ capture backend
+- Stronger automated evaluation dashboards
+- ML clustering and classification
